@@ -1,6 +1,10 @@
 import re
 from datetime import datetime, timedelta
 
+import pytz
+
+JST = pytz.timezone("Asia/Tokyo")
+
 
 def is_valid_time(hour: int, minute: int) -> bool:
     return 0 <= hour <= 23 and 0 <= minute <= 59
@@ -51,7 +55,7 @@ class DateValidator:
         self.date_str = date_str
 
     def validate(self) -> datetime:
-        now = datetime.now()
+        now = datetime.now(pytz.utc).astimezone(JST)
 
         if not self.date_str:
             return now + timedelta(minutes=30)
@@ -65,34 +69,34 @@ class DateValidator:
 
         for pattern, parser in patterns:
             if match := re.match(pattern, self.date_str):
-                return parser(match)
+                return parser(match).astimezone(JST)
 
         raise ValueError(
             "入力形式が不正です。許可されている形式は 'HH:MM', 'MM/DD HH:MM', 'YYYY/MM/DD HH:MM', 'NN (分後)' です。"
         )
 
     def parse_time_only(self, match) -> datetime:
-        now = datetime.now()
+        now = datetime.now(pytz.utc).astimezone(JST)
         hour, minute = int(match.group(1)), int(match.group(2))
         if is_valid_time(hour, minute):
             return now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         raise ValueError("無効な時間指定です。")
 
     def parse_date_time(self, match) -> datetime:
-        now = datetime.now()
+        now = datetime.now(pytz.utc).astimezone(JST)
         month, day, hour, minute = map(int, match.groups())
         if is_valid_date(now.year, month, day) and is_valid_time(hour, minute):
-            return datetime(now.year, month, day, hour, minute)
+            return datetime(now.year, month, day, hour, minute, tzinfo=JST)
         raise ValueError("無効な日付または時間です。")
 
     def parse_full_date(self, match) -> datetime:
         year, month, day, hour, minute = map(int, match.groups())
         if is_valid_date(year, month, day) and is_valid_time(hour, minute):
-            return datetime(year, month, day, hour, minute)
+            return datetime(year, month, day, hour, minute, tzinfo=JST)
         raise ValueError("無効な日付です。")
 
     def parse_minutes_later(self, match) -> datetime:
         minutes = int(match.group(0))
         if minutes > 0:
-            return datetime.now() + timedelta(minutes=minutes)
+            return datetime.now(pytz.utc).astimezone(JST) + timedelta(minutes=minutes)
         raise ValueError("分後の指定は正の整数でなければなりません。")

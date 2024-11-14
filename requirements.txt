@@ -28,5 +28,7 @@ psycopg2==2.9.10
     # via botest3 (./pyproject.toml)
 python-dotenv==1.0.1
     # via botest3 (./pyproject.toml)
+pytz==2024.2
+    # via botest3 (./pyproject.toml)
 yarl==1.17.1
     # via aiohttp
