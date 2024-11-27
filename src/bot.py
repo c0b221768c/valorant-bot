@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 
 from cache.cache_manager import CacheManager
+from cache.member_cache import MemberCache
 from components.embed import EmbedFactory
 from components.views import RecruitmentView
 from config.settings import settings
@@ -14,12 +15,25 @@ intents.guilds = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="/", intents=intents)
+member_cache = MemberCache()
 
 
 @bot.event
 async def on_ready():
     await bot.tree.sync()
+    for guild in bot.guilds:
+        member_cache.load_memebers(guild)
     print(f"Bot is ready. Logged in as {bot.user}")
+
+
+@bot.event
+async def on_member_join(member):
+    member_cache.update_member(member.guild.id, member)
+
+
+@bot.event
+async def on_member_remove(member):
+    member_cache.remove_member(member.guild.id, member.id)
 
 
 @bot.tree.command(

@@ -1,9 +1,7 @@
 import re
 from datetime import datetime, timedelta
 
-import pytz
-
-JST = pytz.timezone("Asia/Tokyo")
+from cache.member_cache import MemberCache
 
 
 def is_valid_time(hour: int, minute: int) -> bool:
@@ -29,23 +27,30 @@ class HeadcountValidator:
 
 
 class ParticipantsValidator:
-    def __init__(self, participants, interaction):
+    def __init__(self, participants: str, interaction):
         self.interaction = interaction
+        self.guild = interaction.guild
         self.participants = participants.split() if participants else []
+        self.cache = MemberCache()
 
-    async def validate(self) -> list[str]:
-        member_ids = [self.interaction.user.id]
+    async def validate(self) -> list[int]:
+        """
+        ユーザーが指定した参加者をキャッシュで検証します。
+        """
+        member_ids = [self.interaction.user.id]  # コマンド実行者を含める
 
         for mention in self.participants:
-            if match := re.match(r"<@!?(\d{18})>$", mention):
-                user_id = int(match.group(1))
-                member = self.interaction.guild.get_member(user_id)
-                if member and user_id != self.interaction.user.id:
-                    member_ids.append(user_id)
-                else:
-                    raise ValueError(f"無効なメンバーです: {mention}")
+            # メンションのID部分を直接抽出
+            user_id = int(mention.strip("<@!>"))
+
+            # キャッシュからユーザー情報を取得
+            member = self.cache.get_member(self.guild.id, user_id)
+            if member and not member["is_bot"]:
+                member_ids.append(user_id)
             else:
-                raise ValueError(f"無効なメンション形式です: {mention}")
+                raise ValueError(
+                    f"指定されたユーザーが存在しないか、Botです: {mention}"
+                )
 
         return member_ids
 
@@ -55,48 +60,51 @@ class DateValidator:
         self.date_str = date_str
 
     def validate(self) -> datetime:
-        now = datetime.now(pytz.utc).astimezone(JST)
+        now = datetime.now()
 
         if not self.date_str:
             return now + timedelta(minutes=30)
 
         patterns = [
-            (r"^(\d{1,2}):(\d{2})$", self.parse_time_only),
-            (r"^(\d{1,2})/(\d{1,2}) (\d{1,2}):(\d{2})$", self.parse_date_time),
-            (r"^(\d{4})/(\d{1,2})/(\d{1,2}) (\d{1,2}):(\d{2})$", self.parse_full_date),
+            (r"^(\d{1,2}):(\d{1,2})$", self.parse_time_only),
+            (r"^(\d{1,2})/(\d{1,2}) (\d{1,2}):(\d{1,2})$", self.parse_date_time),
+            (
+                r"^(\d{4})/(\d{1,2})/(\d{1,2}) (\d{1,2}):(\d{1,2})$",
+                self.parse_full_date,
+            ),
             (r"^\d+$", self.parse_minutes_later),
         ]
 
         for pattern, parser in patterns:
             if match := re.match(pattern, self.date_str):
-                return parser(match).astimezone(JST)
+                return parser(match).astimezone()
 
         raise ValueError(
             "入力形式が不正です。許可されている形式は 'HH:MM', 'MM/DD HH:MM', 'YYYY/MM/DD HH:MM', 'NN (分後)' です。"
         )
 
     def parse_time_only(self, match) -> datetime:
-        now = datetime.now(pytz.utc).astimezone(JST)
+        now = datetime.now()
         hour, minute = int(match.group(1)), int(match.group(2))
         if is_valid_time(hour, minute):
             return now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         raise ValueError("無効な時間指定です。")
 
     def parse_date_time(self, match) -> datetime:
-        now = datetime.now(pytz.utc).astimezone(JST)
+        now = datetime.now()
         month, day, hour, minute = map(int, match.groups())
         if is_valid_date(now.year, month, day) and is_valid_time(hour, minute):
-            return datetime(now.year, month, day, hour, minute, tzinfo=JST)
+            return datetime(now.year, month, day, hour, minute)
         raise ValueError("無効な日付または時間です。")
 
     def parse_full_date(self, match) -> datetime:
         year, month, day, hour, minute = map(int, match.groups())
         if is_valid_date(year, month, day) and is_valid_time(hour, minute):
-            return datetime(year, month, day, hour, minute, tzinfo=JST)
+            return datetime(year, month, day, hour, minute)
         raise ValueError("無効な日付です。")
 
     def parse_minutes_later(self, match) -> datetime:
         minutes = int(match.group(0))
         if minutes > 0:
-            return datetime.now(pytz.utc).astimezone(JST) + timedelta(minutes=minutes)
+            return datetime.now() + timedelta(minutes=minutes)
         raise ValueError("分後の指定は正の整数でなければなりません。")
